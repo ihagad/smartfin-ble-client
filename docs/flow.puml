@@ -1,0 +1,52 @@
+' Green  = implemented
+' Yellow = in progress
+' Gray   = future work
+@startuml Processing Pipeline
+top to bottom direction
+
+title Smartfin BLE Client\nBLE IMU stream to ocean wave statistics
+
+skinparam nodesep 40
+skinparam ranksep 60
+skinparam defaultTextAlignment center
+
+package "Transport" {
+    [BLE / CoreBluetooth] as ble #Green
+    [CoreBluetooth\n(Swift / watchOS)] as corebt #Green
+}
+
+package "Protocol" {
+    [Ensemble Decoder] as decoder #Green
+}
+
+package "AHRS" {
+    [Madgwick Filter\norient_from_imu] as ahrs #Green
+}
+
+package "Processing" {
+    [Decimator\n(factor 11, 65-tap FIR)] as dec #Green
+    [Bandpass Filter\n(0.05-0.50 Hz, filtfilt)] as bp #Green
+    [FFT\n(Cooley-Tukey)] as fft #Green
+    [Welch PSD] as welch #Yellow
+    [Wave Metrics\n(Hs, Tp, Tm)] as metrics #LightGray
+}
+
+package "Output" {
+    [File Sink\n(.sfdat)] as sink #Green
+    [Swift / watchOS API\n(C bridge)] as swift #Green
+    [Python Demo\n(ctypes)] as demo #Green
+}
+
+ble --> decoder
+corebt --> decoder
+decoder --> ahrs : DecodedImu\n(accel, gyro, mag)
+ahrs --> dec : Earth-frame\nacceleration
+dec --> bp : Decimated\nsamples
+bp --> fft : Filtered\nsignal
+fft --> welch : Periodogram\nsegments
+welch --> metrics : PSD
+ahrs --> sink
+metrics --> swift
+metrics --> demo
+
+@enduml
