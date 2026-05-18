@@ -162,6 +162,19 @@ target_include_directories(smartfin_session PUBLIC
 )
 target_link_libraries(smartfin_session PUBLIC smartfin_protocol)
 
+# Static libraries linked into smartfin_demo must be compiled as PIC on ELF
+# platforms because smartfin_demo is a shared library loaded by ctypes.
+set_target_properties(
+    smartfin_protocol
+    smartfin_math
+    smartfin_filter
+    smartfin_ahrs
+    smartfin_pipeline
+    smartfin_welch_demo
+    smartfin_proc_core
+    PROPERTIES POSITION_INDEPENDENT_CODE ON
+)
+
 #  SimpleBLE transport adapter (optional) 
 if(SMARTFIN_ENABLE_SIMPLEBLE)
     add_library(smartfin_transport STATIC
