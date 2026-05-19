@@ -27,6 +27,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+from scipy import signal as sp_signal
 
 REPO_ROOT  = Path(__file__).parent.parent.parent
 BUILD_DIRS = [
@@ -114,6 +115,9 @@ def load_lib(path: Path | None) -> ctypes.CDLL:
 
     lib.sf_demo_real_dft_mag_sq.restype  = None
     lib.sf_demo_real_dft_mag_sq.argtypes = [f64p, f64p]
+
+    lib.sf_demo_welch.restype  = None
+    lib.sf_demo_welch.argtypes = [f64p, ctypes.c_int, ctypes.c_double, f64p]
 
     return lib
 
@@ -291,7 +295,7 @@ def plot_pipeline(elapsed_oriented, accel_oriented,
 
 
 def plot_frequency(X: np.ndarray, X_pre: np.ndarray,
-                   X_filt_all: list, mag_sq: np.ndarray,
+                   X_filt_all: list, welch_psd_z: np.ndarray,
                    fs_dec: float, nperseg: int,
                    mission_label: str, out_dir: Path) -> None:
     """Figure 2: frequency-domain (1x3) + individual subplots."""
@@ -312,15 +316,12 @@ def plot_frequency(X: np.ndarray, X_pre: np.ndarray,
         ax.set_xlim(0, fs_dec / 2)
         ax.legend(fontsize=8)
 
-    def draw_mag_sq(ax):
-        # TODO(welch): replace mag_sq (single-segment periodogram) with the
-        # averaged Welch PSD (WelchResult.psd). Update y-label to "(m/s^2)^2/Hz"
-        # and title to "Welch PSD". The curve will be much smoother.
-        ax.plot(freqs, mag_sq, lw=0.9, color="crimson")
+    def draw_welch_psd(ax):
+        ax.semilogy(freqs, welch_psd_z, lw=0.9, color="crimson")
         ax.axvspan(wave_lo, wave_hi, alpha=0.12, color="gold", label="wave band")
-        ax.set_title("real_dft_mag_sq  |X[k]|^2")
+        ax.set_title("Welch PSD  (averaged)  accel_z")
         ax.set_xlabel("frequency  (Hz)")
-        ax.set_ylabel("|X[k]|^2")
+        ax.set_ylabel("PSD  ((m/s^2)^2/Hz)")
         ax.set_xlim(0, fs_dec / 2)
         ax.legend(fontsize=8)
 
@@ -337,18 +338,18 @@ def plot_frequency(X: np.ndarray, X_pre: np.ndarray,
         ax.set_xlim(0, fs_dec / 2)
         ax.legend(fontsize=8)
 
-    _save(_subplot_fig(draw_fft,    f"FFT magnitude ({mission_label})"),
+    _save(_subplot_fig(draw_fft,       f"FFT magnitude ({mission_label})"),
           out_dir / "freq_1_fft_magnitude.png")
-    _save(_subplot_fig(draw_mag_sq, f"real_dft_mag_sq ({mission_label})"),
+    _save(_subplot_fig(draw_welch_psd, f"Welch PSD ({mission_label})"),
           out_dir / "freq_2_mag_sq.png")
-    _save(_subplot_fig(draw_xyz,    f"FFT by axis ({mission_label})"),
+    _save(_subplot_fig(draw_xyz,       f"FFT by axis ({mission_label})"),
           out_dir / "freq_3_xyz.png")
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(19, 4))
-    fig.suptitle(f"Frequency domain — first segment  ({mission_label})", fontsize=13)
-    draw_fft(ax1);    ax1.grid(True, lw=0.3)
-    draw_mag_sq(ax2); ax2.grid(True, lw=0.3)
-    draw_xyz(ax3);    ax3.grid(True, lw=0.3)
+    fig.suptitle(f"Frequency domain  ({mission_label})", fontsize=13)
+    draw_fft(ax1);       ax1.grid(True, lw=0.3)
+    draw_welch_psd(ax2); ax2.grid(True, lw=0.3)
+    draw_xyz(ax3);       ax3.grid(True, lw=0.3)
     fig.tight_layout()
     _save(fig, out_dir / "freq_combined.png")
 

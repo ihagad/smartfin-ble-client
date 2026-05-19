@@ -184,4 +184,14 @@ void sf_demo_real_dft_mag_sq(const double *signal, double *mag_sq)
         mag_sq[i] = out[i];
 }
 
+void sf_demo_welch(const double *signal, int n, double fs, double *out_psd)
+{
+    const std::vector<double> sig(signal, signal + n);
+    const auto result = sf::welch::welch(
+        sig, fs, CFG::welch_nperseg, CFG::welch_noverlap);
+    const int bins = CFG::welch_nperseg / 2 + 1;
+    for (int k = 0; k < bins; ++k)
+        out_psd[k] = result.psd[k];
+}
+
 } // extern "C"

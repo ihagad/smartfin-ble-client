@@ -130,6 +130,25 @@ void sf_demo_fft(double *re, double *im);
  */
 void sf_demo_real_dft_mag_sq(const double *signal, double *mag_sq);
 
+/**
+ * @brief Welch power spectral density estimate for a real signal.
+ *
+ * Wraps sf::welch::welch using CFG::welch_nperseg and CFG::welch_noverlap.
+ * The output has length CFG::welch_nperseg / 2 + 1 and is in units of
+ * (input unit)^2 / Hz.
+ *
+ * @param signal   Real input signal, length n.
+ * @param n        Number of input samples.
+ * @param fs       Sample rate in Hz.
+ * @param out_psd  Output one-sided PSD, pre-allocated length nperseg/2+1.
+ */
+void sf_demo_welch(
+    const double *signal,
+    int           n,
+    double        fs,
+    double       *out_psd
+);
+
 #ifdef __cplusplus
 }
 #endif
