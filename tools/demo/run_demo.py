@@ -11,10 +11,10 @@ DUNEX NetCDF IMU data to numpy arrays, and calls each pipeline stage directly.
 
 Usage:
     python tools/demo/run_demo.py                        # mission 34
-    python tools/demo/run_demo.py --mission 2
-    python tools/demo/run_demo.py --local data/mission_34.nc
-    python tools/demo/run_demo.py --lib path/to/libsmartfin_demo.dylib
-    python tools/demo/run_demo.py --no-plot              # print only
+    python tools/demo/run_demo.py:mission 2
+    python tools/demo/run_demo.py:local data/mission_34.nc
+    python tools/demo/run_demo.py:lib path/to/libsmartfin_demo.dylib
+    python tools/demo/run_demo.py:no-plot              # print only
 """
 
 import argparse
@@ -85,7 +85,7 @@ def load_lib(path: Path | None) -> ctypes.CDLL:
         else:
             raise FileNotFoundError(
                 "libsmartfin_demo not found. Build it first:\n"
-                "  cmake -B build && cmake --build build --target smartfin_demo"
+                "  cmake -B build && cmake:build build:target smartfin_demo"
             )
 
     lib.sf_demo_nperseg.restype  = ctypes.c_int
@@ -354,6 +354,106 @@ def plot_frequency(X: np.ndarray, X_pre: np.ndarray,
     _save(fig, out_dir / "freq_combined.png")
 
 
+def plot_welch(freqs: np.ndarray, welch_psds: list,
+               filt_accel: np.ndarray,
+               eta_time: np.ndarray, eta: np.ndarray,
+               fs_dec: float, nperseg: int,
+               mission_label: str, out_dir: Path) -> None:
+    """Figure 7: Welch PSD: four subplots and a combined 2x2."""
+    wave_lo, wave_hi = 0.05, 0.50
+    psd_z = welch_psds[2]
+
+    wave_mask = (freqs >= wave_lo) & (freqs <= wave_hi)
+    peak_f = peak_T = None
+    if wave_mask.any() and psd_z[wave_mask].max() > 0:
+        peak_f = float(freqs[wave_mask][np.argmax(psd_z[wave_mask])])
+        peak_T = 1.0 / peak_f
+
+    def draw_psd_z(ax):
+        ax.semilogy(freqs, psd_z, lw=0.9, color="royalblue")
+        ax.axvspan(wave_lo, wave_hi, alpha=0.12, color="gold", label="wave band")
+        if peak_f is not None:
+            ax.axvline(peak_f, lw=1.0, color="crimson", linestyle="--",
+                       label=f"peak  {peak_f:.3f} Hz  (Tp={peak_T:.1f} s)")
+        ax.set_title("Welch PSD: accel_z  (filtered)")
+        ax.set_xlabel("frequency  (Hz)")
+        ax.set_ylabel("PSD  ((m/s^2)^2/Hz)")
+        ax.set_xlim(0, fs_dec / 2)
+        ax.legend(fontsize=8)
+
+    def draw_psd_xyz(ax):
+        colors = ("steelblue", "darkorange", "seagreen")
+        labels = ("x", "y", "z")
+        for psd, c, lbl in zip(welch_psds, colors, labels):
+            ax.semilogy(freqs, psd, lw=0.9, color=c, label=lbl)
+        ax.axvspan(wave_lo, wave_hi, alpha=0.12, color="gold", label="wave band")
+        ax.set_title("Welch PSD by axis  (filtered)")
+        ax.set_xlabel("frequency  (Hz)")
+        ax.set_ylabel("PSD  ((m/s^2)^2/Hz)")
+        ax.set_xlim(0, fs_dec / 2)
+        ax.legend(fontsize=8)
+
+    def draw_vs_periodogram(ax):
+        seg = filt_accel[:nperseg, 2]
+        f_per, psd_per = sp_signal.periodogram(seg, fs=fs_dec, window="hann")
+        ax.semilogy(f_per, psd_per, lw=0.6, color="tomato", alpha=0.8,
+                    label="single-segment periodogram")
+        ax.semilogy(freqs, psd_z, lw=1.0, color="royalblue",
+                    label="Welch PSD  (averaged)")
+        ax.axvspan(wave_lo, wave_hi, alpha=0.12, color="gold", label="wave band")
+        ax.set_title("Welch PSD vs single-segment periodogram  (accel_z)")
+        ax.set_xlabel("frequency  (Hz)")
+        ax.set_ylabel("PSD  ((m/s^2)^2/Hz)")
+        ax.set_xlim(0, fs_dec / 2)
+        ax.legend(fontsize=8)
+
+    def draw_vs_reference(ax):
+        if eta.size < nperseg:
+            ax.text(0.5, 0.5, "too few eta samples for Welch",
+                    ha="center", va="center", transform=ax.transAxes)
+            return
+        dt_eta = float(np.median(np.diff(eta_time)))
+        fs_eta = 1.0 / dt_eta if dt_eta > 0 else 1.0
+        f_eta, psd_eta = sp_signal.welch(
+            eta, fs=fs_eta, nperseg=min(nperseg, eta.size // 2),
+            noverlap=min(nperseg, eta.size // 2) // 2)
+        ax2 = ax.twinx()
+        ax.semilogy(freqs, psd_z, lw=0.9, color="royalblue",
+                    label="accel_z  ((m/s^2)^2/Hz)")
+        ax2.semilogy(f_eta, psd_eta, lw=0.9, color="darkorange", alpha=0.8,
+                     label="eta  (m^2/Hz)")
+        ax.axvspan(wave_lo, wave_hi, alpha=0.12, color="gold")
+        ax.set_xlabel("frequency  (Hz)")
+        ax.set_ylabel("(m/s^2)^2/Hz", color="royalblue")
+        ax2.set_ylabel("m^2/Hz", color="darkorange")
+        ax.set_xlim(0, min(fs_dec, fs_eta) / 2)
+        ax.set_title("Welch PSD: accel_z  vs  sea_surface_elevation")
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, fontsize=8)
+
+    _save(_subplot_fig(draw_psd_z,         f"Welch PSD accel_z ({mission_label})"),
+          out_dir / "welch_1_psd_z.png")
+    _save(_subplot_fig(draw_psd_xyz,       f"Welch PSD by axis ({mission_label})"),
+          out_dir / "welch_2_psd_xyz.png")
+    _save(_subplot_fig(draw_vs_periodogram,
+                       f"Welch vs periodogram ({mission_label})"),
+          out_dir / "welch_3_vs_periodogram.png")
+    _save(_subplot_fig(draw_vs_reference,  f"Welch vs eta ({mission_label})"),
+          out_dir / "welch_4_vs_reference.png")
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 8))
+    fig.suptitle(f"Welch PSD  ({mission_label})", fontsize=13)
+    draw_psd_z(axes[0, 0])
+    draw_psd_xyz(axes[0, 1])
+    draw_vs_periodogram(axes[1, 0])
+    draw_vs_reference(axes[1, 1])
+    for ax in axes.flat:
+        ax.grid(True, lw=0.3, which="both")
+    fig.tight_layout()
+    _save(fig, out_dir / "welch_combined.png")
+
+
 def plot_spectrogram(dec_elapsed: np.ndarray, dec_accel: np.ndarray,
                      fs_dec: float, nperseg: int,
                      mission_label: str, out_dir: Path) -> None:
@@ -379,13 +479,6 @@ def plot_reference(dec_elapsed: np.ndarray, filt_accel: np.ndarray,
                    eta_time: np.ndarray, eta: np.ndarray,
                    mission_label: str, out_dir: Path) -> None:
     """Figure 5: pipeline accel_z vs Level-2 sea_surface_elevation reference."""
-    # TODO(welch): add a second subplot comparing the Welch PSD of filt_accel[:,2]
-    # against the PSD of sea_surface_elevation. A spectral comparison is more
-    # meaningful than a time-domain overlay since accel and elevation differ by
-    # a double integration (factor of (2*pi*f)^4 in power).
-    # TODO(wave_metrics): annotate the plot with Hs and Tp from sf_demo_wave_metrics()
-    # alongside the microSWIFT Level-2 significant_wave_height and peak_wave_period
-    # fields for a direct scalar comparison.
     t_dec = dec_elapsed / 1000.0
 
     def draw_overlay(ax):
@@ -565,10 +658,6 @@ def main() -> None:
         report_accel(dec_elapsed, filt_accel)
 
     # Stage 4: fft
-    # TODO(welch): replace manual per-segment FFT loop with a single
-    # sf_demo_welch() call that returns WelchResult (freqs, psd, df) for each
-    # axis. The Welch estimate averages across all overlapping segments so the
-    # single-segment X / mag_sq below becomes unnecessary.
     section(f"Stage 4: fft  (nperseg={nperseg})")
     if n_dec < nperseg:
         print(f"  ERROR: only {n_dec} decimated samples, need {nperseg}")
@@ -596,9 +685,6 @@ def main() -> None:
     print(f"  |X_z[N/2]|: {abs(X[nperseg // 2]):.4e}  (Nyquist, filtered z)")
 
     # Stage 5: real_dft_mag_sq
-    # TODO(welch): once sf_demo_welch() exists, drop this call and use the
-    # averaged PSD from WelchResult instead. real_dft_mag_sq on a single
-    # segment is a noisy periodogram; Welch averaging gives a stable estimate.
     section("Stage 5: real_dft_mag_sq")
     mag_sq = np.zeros(nperseg // 2 + 1, dtype=np.float64)
     lib.sf_demo_real_dft_mag_sq(
@@ -614,12 +700,29 @@ def main() -> None:
 
     print(f"  one-sided bins : {len(mag_sq)}  (nperseg/2 + 1)")
     print(f"  df             : {df:.4f} Hz")
-    # TODO(wave_metrics): replace manual peak search with sf_demo_wave_metrics()
-    # output: Hs (significant wave height), Tp (peak period), Tm (mean period).
     print(f"  top peaks in wave band (0.05–0.50 Hz):")
     wf, wm = freqs[wave], mag_sq[wave]
     for i in top3:
         print(f"    {wf[i]:.4f} Hz   |X|^2 = {wm[i]:.4e}")
+
+    # Stage 6: Welch PSD
+    section(f"Stage 6: Welch PSD  (nperseg={nperseg}, noverlap={nperseg // 2})")
+    bins = nperseg // 2 + 1
+    welch_psds = []
+    for axis in range(3):
+        sig = np.ascontiguousarray(filt_accel[:, axis].copy())
+        psd = np.zeros(bins, dtype=np.float64)
+        lib.sf_demo_welch(sig, n_dec, fs_dec, psd)
+        welch_psds.append(psd)
+
+    welch_freqs = np.arange(bins) * (fs_dec / nperseg)
+    psd_z = welch_psds[2]
+    wave_mask_w = (welch_freqs >= 0.05) & (welch_freqs <= 0.50)
+    if wave_mask_w.any() and psd_z[wave_mask_w].max() > 0:
+        peak_f = float(welch_freqs[wave_mask_w][np.argmax(psd_z[wave_mask_w])])
+        print(f"  peak in wave band: {peak_f:.4f} Hz  (Tp = {1.0 / peak_f:.1f} s)")
+    print(f"  segments averaged: "
+          f"{max(0, (n_dec - nperseg) // (nperseg // 2) + 1)}")
 
     if args.no_plot:
         return
@@ -637,8 +740,11 @@ def main() -> None:
     plot_pipeline(elapsed_oriented, accel_oriented,
                   dec_elapsed, dec_accel, filt_accel, mission_label, out_dir)
 
-    plot_frequency(X, X_pre, X_filt_all, mag_sq,
+    plot_frequency(X, X_pre, X_filt_all, psd_z,
                    fs_dec, nperseg, mission_label, out_dir)
+
+    plot_welch(welch_freqs, welch_psds, filt_accel,
+               eta_time, eta_vals, fs_dec, nperseg, mission_label, out_dir)
 
     plot_spectrogram(dec_elapsed, dec_accel, fs_dec, nperseg, mission_label, out_dir)
 
