@@ -98,10 +98,11 @@ VelocityPSD integrate_to_velocity(const welch::WelchResult &accel_psd,
  *
  * @param dpsd  Displacement PSD from integrate_to_displacement().
  * @param vpsd  Velocity PSD from integrate_to_velocity().
+ * @param df    Frequency bin spacing in Hz (= fs / nperseg).
  * @return      WaveMetrics with Hs, Tp, Tm01, Tm02, v_rms.
  */
 WaveMetrics compute_metrics(const DisplacementPSD &dpsd,
-                             const VelocityPSD &vpsd);
+                             const VelocityPSD &vpsd, double df);
 
 /**
  * @brief Compute wave metrics directly from an acceleration PSD.
