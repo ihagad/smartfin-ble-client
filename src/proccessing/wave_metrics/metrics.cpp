@@ -95,7 +95,7 @@ WaveMetrics compute_metrics(const DisplacementPSD &dpsd,
     WaveMetrics metrics;
     SpectralMoments moments = compute_moments(dpsd, df);
     auto it = std::max_element(dpsd.psd.begin(), dpsd.psd.end());
-    double f_peak = dpsd.freqs[std::distance(dpsd.psd.begin(), it)];
+    double f_peak = dpsd.freqs[static_cast<std::size_t>(std::distance(dpsd.psd.begin(), it))];
 
     metrics.Hs = 4 * std::sqrt(moments.m0);
     metrics.Tp = 1 / f_peak;
