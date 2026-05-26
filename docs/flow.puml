@@ -19,16 +19,24 @@ package "Protocol" {
     [Ensemble Decoder] as decoder #Green
 }
 
-package "AHRS" {
-    [Madgwick Filter\norient_from_imu] as ahrs #Green
+package "Orientation" {
+    package "IMU without quaternion" {
+        [Madgwick Filter\norient_from_imu] as ahrs #Green
+    }
+
+    package "IMU with quaternion" {
+        [DMP Quaternion Rotate\norient_from_quat_imu\n(skips AHRS)] as quat_orient #Green
+    }
+
+    [Oriented Ride\n(time merge)] as oriented #Green
 }
 
 package "Processing" {
     [Decimator\n(factor 11, 65-tap FIR)] as dec #Green
     [Bandpass Filter\n(0.05-0.50 Hz, filtfilt)] as bp #Green
     [FFT\n(Cooley-Tukey)] as fft #Green
-    [Welch PSD] as welch #Yellow
-    [Wave Metrics\n(Hs, Tp, Tm)] as metrics #LightGray
+    [Welch PSD] as welch ##Green
+    [Wave Metrics\n(Hs, Tp, Tm)] as metrics ##Green
 }
 
 package "Output" {
@@ -40,12 +48,15 @@ package "Output" {
 ble --> decoder
 corebt --> decoder
 decoder --> ahrs : DecodedImu\n(accel, gyro, mag)
-ahrs --> dec : Earth-frame\nacceleration
+decoder --> quat_orient : DecodedQuatImu\n(accel, gyro, mag, q)
+ahrs --> oriented : OrientedSample\n(q from AHRS)
+quat_orient --> oriented : OrientedSample\n(q from packet)
+oriented --> dec : Earth-frame\nacceleration
 dec --> bp : Decimated\nsamples
 bp --> fft : Filtered\nsignal
 fft --> welch : Periodogram\nsegments
 welch --> metrics : PSD
-ahrs --> sink
+decoder --> sink : Decoded ensembles
 metrics --> swift
 metrics --> demo
 
