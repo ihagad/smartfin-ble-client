@@ -13,8 +13,8 @@ add_subdirectory(filtfilt)
 add_subdirectory(butterworth)
 add_subdirectory(welch)
 
-set(SF_CONTRACT_DIR "" CACHE PATH "Directory containing contract .bin fixture files")
+set(SF_CONTRACT_MANIFEST "" CACHE PATH "Path to contract manifest file (one .bin path per line)")
 
-if(NOT SF_CONTRACT_DIR STREQUAL "")
+if(NOT SF_CONTRACT_MANIFEST STREQUAL "")
     add_subdirectory(contract)
 endif()

@@ -11,5 +11,5 @@ target_include_directories(contract_test PRIVATE
 )
 
 gtest_discover_tests(contract_test
-    PROPERTIES ENVIRONMENT "SF_CONTRACT_DIR=${SF_CONTRACT_DIR};SF_CONTRACT_OUT=${CMAKE_BINARY_DIR}/contract_out"
+    PROPERTIES ENVIRONMENT "SF_CONTRACT_MANIFEST=${SF_CONTRACT_MANIFEST};SF_CONTRACT_OUT=${CMAKE_BINARY_DIR}/contract_out"
 )
