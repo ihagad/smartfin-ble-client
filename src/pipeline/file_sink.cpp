@@ -7,9 +7,15 @@
 
 #include "file_sink.hpp"
 
+#include "protocol/ensemble_decoder.hpp"
+
 #include <algorithm>
+#include <cstdio>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <variant>
+#include <vector>
 
 namespace sf::pipeline {
 
@@ -215,6 +221,74 @@ void replay_ride(const RideData &data, ISampleSink &sink)
 
     if (!fw_emitted && data.fw_version)
         sink.on_fw_version(*data.fw_version);
+}
+
+namespace
+{
+
+/**
+ * @brief Dispatch a single decoded ensemble to the appropriate sink method.
+ * @param e     Decoded ensemble variant.
+ * @param sink  Destination sink.
+ */
+void dispatch(const sf::protocol::DecodedEnsemble &e, sf::pipeline::ISampleSink &sink)
+{
+    std::visit(
+        [&](auto &&s)
+        {
+            using T = std::decay_t<decltype(s)>;
+            if constexpr (std::is_same_v<T, sf::protocol::DecodedImu>)
+                sink.on_imu(s);
+            else if constexpr (std::is_same_v<T, sf::protocol::DecodedQuatImu>)
+                sink.on_quat_imu(s);
+            else if constexpr (std::is_same_v<T, sf::protocol::DecodedTemp>)
+                sink.on_temperature(s);
+            else if constexpr (std::is_same_v<T, sf::protocol::DecodedFwVersion>)
+                sink.on_fw_version(s);
+        },
+        e);
+}
+
+/**
+ * @brief Read an entire file into a byte vector.
+ * @param p  Path to the file.
+ * @return File contents.
+ * @throws std::runtime_error if the file cannot be opened.
+ */
+std::vector<uint8_t> read_bin(const std::filesystem::path &p)
+{
+    std::FILE *f = std::fopen(p.string().c_str(), "rb");
+    if (!f)
+        throw std::runtime_error("replay_packets: cannot open " + p.string());
+    std::fseek(f, 0, SEEK_END);
+    const auto sz = static_cast<std::size_t>(std::ftell(f));
+    std::fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> buf(sz);
+    std::fread(buf.data(), 1, sz, f);
+    std::fclose(f);
+    return buf;
+}
+
+} // namespace
+
+void replay_packets(const std::filesystem::path &dir, ISampleSink &sink)
+{
+    std::vector<std::filesystem::path> bins;
+    for (const auto &entry : std::filesystem::directory_iterator(dir))
+    {
+        if (entry.path().extension() == ".bin")
+            bins.push_back(entry.path());
+    }
+    std::sort(bins.begin(), bins.end());
+
+    std::vector<sf::protocol::DecodedEnsemble> decoded;
+    for (const auto &p : bins)
+    {
+        const auto bytes = read_bin(p);
+        sf::protocol::decode_packet(bytes, decoded);
+    }
+    for (const auto &e : decoded)
+        dispatch(e, sink);
 }
 
 } // namespace sf::pipeline

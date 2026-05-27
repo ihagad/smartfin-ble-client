@@ -14,6 +14,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -202,8 +203,21 @@ namespace sf::pipeline {
      * @param data  Ride data returned by load_ride().
      * @param sink  Sink to receive the replayed samples.
      */
-
     void replay_ride(const RideData &data, ISampleSink &sink);
+
+    /**
+     * @brief Replay raw BLE notification files into a sink in filename order.
+     *
+     * Reads every @c .bin file in @p dir, sorts them by name (so a zero-padded
+     * sequence prefix such as @c 0001_quat_imu.bin controls playback order),
+     * decodes each file as a single BLE notification payload, and dispatches
+     * every decoded ensemble to @p sink.
+     *
+     * @param dir   Directory containing @c .bin notification files.
+     * @param sink  Sink to receive the decoded samples.
+     * @throws std::runtime_error if any file cannot be opened.
+     */
+    void replay_packets(const std::filesystem::path &dir, ISampleSink &sink);
 
 } // namespace sf::pipeline
 
