@@ -271,6 +271,18 @@ std::vector<uint8_t> read_bin(const std::filesystem::path &p)
 
 } // namespace
 
+void replay_packets(const std::vector<std::filesystem::path> &paths, ISampleSink &sink)
+{
+    std::vector<sf::protocol::DecodedEnsemble> decoded;
+    for (const auto &p : paths)
+    {
+        const auto bytes = read_bin(p);
+        sf::protocol::decode_packet(bytes, decoded);
+    }
+    for (const auto &e : decoded)
+        dispatch(e, sink);
+}
+
 void replay_packets(const std::filesystem::path &dir, ISampleSink &sink)
 {
     std::vector<std::filesystem::path> bins;
@@ -280,15 +292,7 @@ void replay_packets(const std::filesystem::path &dir, ISampleSink &sink)
             bins.push_back(entry.path());
     }
     std::sort(bins.begin(), bins.end());
-
-    std::vector<sf::protocol::DecodedEnsemble> decoded;
-    for (const auto &p : bins)
-    {
-        const auto bytes = read_bin(p);
-        sf::protocol::decode_packet(bytes, decoded);
-    }
-    for (const auto &e : decoded)
-        dispatch(e, sink);
+    replay_packets(bins, sink);
 }
 
 } // namespace sf::pipeline

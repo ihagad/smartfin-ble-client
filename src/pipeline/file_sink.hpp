@@ -206,12 +206,22 @@ namespace sf::pipeline {
     void replay_ride(const RideData &data, ISampleSink &sink);
 
     /**
-     * @brief Replay raw BLE notification files into a sink in filename order.
+     * @brief Replay an ordered list of raw BLE notification files into a sink.
      *
-     * Reads every @c .bin file in @p dir, sorts them by name (so a zero-padded
-     * sequence prefix such as @c 0001_quat_imu.bin controls playback order),
-     * decodes each file as a single BLE notification payload, and dispatches
-     * every decoded ensemble to @p sink.
+     * Decodes each file as a single BLE notification payload in the order given
+     * and dispatches every decoded ensemble to @p sink.
+     *
+     * @param paths Ordered list of .bin notification file paths.
+     * @param sink  Sink to receive the decoded samples.
+     * @throws std::runtime_error if any file cannot be opened.
+     */
+    void replay_packets(const std::vector<std::filesystem::path> &paths, ISampleSink &sink);
+
+    /**
+     * @brief Replay every @c .bin file in @p dir into a sink in filename order.
+     *
+     * Convenience wrapper around the vector overload; sorts files alphabetically
+     * so a zero-padded sequence prefix controls playback order.
      *
      * @param dir   Directory containing @c .bin notification files.
      * @param sink  Sink to receive the decoded samples.
