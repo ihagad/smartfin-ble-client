@@ -295,5 +295,8 @@ target_link_libraries(smartfin_decode_notifications PRIVATE
 )
 target_compile_features(smartfin_decode_notifications PRIVATE cxx_std_20)
 
-enable_testing()
-add_subdirectory(tests)
+include(CTest)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
