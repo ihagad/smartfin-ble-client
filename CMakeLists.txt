@@ -283,5 +283,17 @@ target_compile_definitions(smartfin_demo PRIVATE
 )
 target_compile_features(smartfin_demo PRIVATE cxx_std_20)
 
+add_executable(smartfin_decode_notifications
+    tools/decode_notifications.cpp
+)
+target_include_directories(smartfin_decode_notifications PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(smartfin_decode_notifications PRIVATE
+    smartfin_pipeline
+    smartfin_protocol
+)
+target_compile_features(smartfin_decode_notifications PRIVATE cxx_std_20)
+
 enable_testing()
 add_subdirectory(tests)

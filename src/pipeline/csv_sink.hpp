@@ -70,11 +70,11 @@ public:
     void on_fw_version(const sf::protocol::DecodedFwVersion &s) override;
 
 private:
-    std::ofstream accel_; ///< accel.csv: elapsed_ms, accel_x, accel_y, accel_z
-    std::ofstream gyro_;  ///< gyro.csv:  elapsed_ms, gyro_x, gyro_y, gyro_z
-    std::ofstream mag_;   ///< mag.csv:   elapsed_ms, mag_x, mag_y, mag_z
-    std::ofstream temp_;  ///< temp.csv:  elapsed_ms, temperature, in_water
-    std::ofstream quat_;  ///< quat.csv:  elapsed_ms, q0, q1, q2, q3, heading_accuracy_deg, quat_valid
+    std::ofstream accel_; ///< decoded_accel.csv: elapsed_ms, accel_x, accel_y, accel_z
+    std::ofstream gyro_;  ///< decoded_gyro.csv:  elapsed_ms, gyro_x, gyro_y, gyro_z
+    std::ofstream mag_;   ///< decoded_mag.csv:   elapsed_ms, mag_x, mag_y, mag_z
+    std::ofstream temp_;  ///< decoded_temp.csv:  elapsed_ms, temperature, in_water
+    std::ofstream quat_;  ///< decoded_quat.csv:  elapsed_ms, q0, q1, q2, q3, heading_accuracy_deg, quat_valid
 
     /**
      * @brief Write a three-element float array as comma-separated values followed by newline.

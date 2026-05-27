@@ -78,7 +78,7 @@ TEST(ContractTest, OutputCsvFilesAreNonEmpty)
 {
     const fs::path out_dir = contract_out_dir();
 
-    for (const char *name : {"accel.csv", "gyro.csv", "mag.csv"})
+    for (const char *name : {"decoded_accel.csv", "decoded_gyro.csv", "decoded_mag.csv"})
     {
         const fs::path p = out_dir / name;
         EXPECT_TRUE(fs::exists(p)) << name << " was not written";

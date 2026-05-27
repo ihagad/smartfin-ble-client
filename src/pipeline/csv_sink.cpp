@@ -35,9 +35,9 @@ std::ofstream open_csv(const std::filesystem::path &dir, const char *name)
 } // namespace
 
 CsvSink::CsvSink(const std::filesystem::path &dir)
-    : accel_(open_csv(dir, "accel.csv")), gyro_(open_csv(dir, "gyro.csv")),
-      mag_(open_csv(dir, "mag.csv")), temp_(open_csv(dir, "temp.csv")),
-      quat_(open_csv(dir, "quat.csv"))
+    : accel_(open_csv(dir, "decoded_accel.csv")), gyro_(open_csv(dir, "decoded_gyro.csv")),
+      mag_(open_csv(dir, "decoded_mag.csv")), temp_(open_csv(dir, "decoded_temp.csv")),
+      quat_(open_csv(dir, "decoded_quat.csv"))
 {
     accel_ << "elapsed_ms,accel_x,accel_y,accel_z\n";
     gyro_ << "elapsed_ms,gyro_x,gyro_y,gyro_z\n";
