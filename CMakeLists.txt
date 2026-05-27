@@ -91,6 +91,7 @@ target_compile_features(smartfin_ahrs PUBLIC cxx_std_20)
 # LoggingSink) need no compilation unit; FileSink does.
 add_library(smartfin_pipeline STATIC
     src/pipeline/file_sink.cpp
+    src/pipeline/csv_sink.cpp
 )
 target_include_directories(smartfin_pipeline PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src

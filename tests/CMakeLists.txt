@@ -12,3 +12,9 @@ endif()
 add_subdirectory(filtfilt)
 add_subdirectory(butterworth)
 add_subdirectory(welch)
+
+set(SF_CONTRACT_DIR "" CACHE PATH "Directory containing contract .bin fixture files")
+
+if(NOT SF_CONTRACT_DIR STREQUAL "")
+    add_subdirectory(contract)
+endif()
