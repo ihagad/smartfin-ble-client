@@ -31,7 +31,7 @@ static constexpr size_t TEMP_PAYLOAD_SIZE =
 static constexpr size_t IMU_PAYLOAD_SIZE =
     18; ///< ENS_TEMP_HIGH_DATA_RATE_IMU (0x0C): 3×int16 accel + 3×int16 gyro +
         ///< 3×int16 mag
-static constexpr size_t QUAT_PAYLOAD_SIZE = 34;
+static constexpr size_t QUAT_PAYLOAD_SIZE = 32;
 static constexpr size_t TEXT_NCHARS_SIZE =
     1; ///< ENS_TEXT (0x0F): nChars prefix byte
 static constexpr size_t TEXT_MAX_CHARS =
@@ -177,16 +177,18 @@ bool decode_packet(std::span<const uint8_t> packet,
             DecodedQuatImu imu{};
             imu.elapsed_time_ms = elapsed_ms;
 
-            static constexpr float Q14 = 16384.0f;
-            static constexpr float Q7 = 128.0f;
-            static constexpr float Q3 = 8.0f;
+            static constexpr float Q9  = 512.0f;
+            static constexpr float Q7  = 128.0f;
+            static constexpr float Q3  = 8.0f;
             static constexpr float Q30 = 1073741824.0f;
+            static constexpr float Q12 = 4096.0f;
+            static constexpr float kRadToDeg = 57.29577951308232f;
 
             for (int i = 0; i < 3; ++i)
             {
-                imu.accel_ms2[i] = read_i16_le(payload + i * 2) / Q14;
-                imu.gyro_dps[i] = read_i16_le(payload + 6 + i * 2) / Q7;
-                imu.mag_uT[i] = read_i16_le(payload + 12 + i * 2) / Q3;
+                imu.accel_ms2[i] = read_i16_le(payload + i * 2) / Q9;
+                imu.gyro_dps[i]  = read_i16_le(payload + 6 + i * 2) / Q7;
+                imu.mag_uT[i]    = read_i16_le(payload + 12 + i * 2) / Q3;
             }
 
             const double q1 = read_i32_le(payload + 18) / Q30;
@@ -200,8 +202,9 @@ bool decode_packet(std::span<const uint8_t> packet,
             imu.q[2] = static_cast<float>(q2);
             imu.q[3] = static_cast<float>(q3);
 
+            // accuracy_q12 is int16, Q12 radians; convert to degrees for the field.
             imu.heading_accuracy_deg =
-                static_cast<float>(read_i32_le(payload + 30) / 3096.0f);
+                (read_i16_le(payload + 30) / Q12) * kRadToDeg;
             imu.quat_valid = imu.heading_accuracy_deg < 10.0f;
 
             out.push_back(imu);
