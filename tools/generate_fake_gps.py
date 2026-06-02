@@ -247,9 +247,44 @@ def write_gps_csv(path: Path, fixes: list[GpsFix]) -> None:
             writer.writerow(fix_to_row(fix))
 
 
-def write_synthetic_sfdat(path: Path, duration_s: float, imu_hz: float = 55.0) -> int:
+G0_MPS2 = 9.80665
+
+
+def zero_g_enu_mps2(t_s: float, trajectory: str) -> tuple[float, float, float]:
     """
-    Write a minimal .sfdat with synthetic QuatImu @ imu_hz for [0, duration_s].
+    Kinematic zero-g acceleration in ENU (m/s²) consistent with GPS trajectories.
+
+    Uses identity orientation in the synthetic .sfdat so body frame = ENU.
+    Constant-speed legs → ~0; circle includes centripetal acceleration.
+    """
+    if trajectory == "paddle_pause":
+        return (0.0, 0.0, 0.0)
+    if trajectory == "straight_line":
+        return (0.0, 0.0, 0.0)
+    if trajectory == "stationary":
+        return (0.0, 0.0, 0.0)
+    if trajectory == "circle":
+        radius_m = 40.0
+        speed_mps = 1.2
+        omega = speed_mps / radius_m
+        angle = omega * t_s
+        # Matches trajectory_circle position derivatives (east, north).
+        ax = -radius_m * omega * omega * math.sin(angle)
+        ay = radius_m * omega * omega * math.cos(angle)
+        return (ax, ay, 0.0)
+    return (0.0, 0.0, 0.0)
+
+
+def write_synthetic_sfdat(
+    path: Path,
+    duration_s: float,
+    trajectory: str = "paddle_pause",
+    imu_hz: float = 55.0,
+) -> int:
+    """
+    Write a .sfdat with synthetic QuatImu @ imu_hz, kinematically matched to @p trajectory.
+
+    Identity quaternion (level, ENU = body): accel_ms2 = zero_g_enu + gravity on Up.
     Returns number of records written.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -278,10 +313,11 @@ def write_synthetic_sfdat(path: Path, duration_s: float, imu_hz: float = 55.0) -
         for i in range(n_samples):
             elapsed_ms = int(round(i * dt_ms))
             t_s = elapsed_ms / 1000.0
-            # Gentle bobbing — enough motion to sanity-check loaders, not physics.
-            ax = 0.3 * math.sin(2.0 * math.pi * 0.2 * t_s)
-            ay = 0.2 * math.cos(2.0 * math.pi * 0.15 * t_s)
-            az = 9.81 + 0.1 * math.sin(2.0 * math.pi * 0.1 * t_s)
+            ax_0g, ay_0g, az_0g = zero_g_enu_mps2(t_s, trajectory)
+            # Body frame = ENU with identity quat; gravity along +Z (g-units z=1).
+            ax = ax_0g
+            ay = ay_0g
+            az = az_0g + G0_MPS2
             payload = struct.pack(
                 quat_fmt,
                 elapsed_ms,
@@ -379,8 +415,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  trajectory = {args.trajectory}, duration = {args.duration}s, rate = {args.rate} Hz")
 
     if not args.no_sfdat:
-        n = write_synthetic_sfdat(args.sfdat, args.duration)
-        print(f"Wrote {n} QuatImu records @ 55 Hz -> {args.sfdat}")
+        n = write_synthetic_sfdat(args.sfdat, args.duration, args.trajectory)
+        print(
+            f"Wrote {n} QuatImu records @ 55 Hz -> {args.sfdat} "
+            f"(kinematics matched to {args.trajectory})"
+        )
 
     return 0
 

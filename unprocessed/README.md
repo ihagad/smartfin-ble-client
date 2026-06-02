@@ -24,7 +24,7 @@ t_elapsed_ms = elapsed_time_ms   # in .sfdat
 | File | Source |
 |------|--------|
 | `fake_gps.csv` | `python3 tools/generate_fake_gps.py` — paddle + pause trajectory |
-| `ride_20260601_143000.sfdat` | Same script (`--sfdat`); synthetic QuatImu for loader tests |
+| `ride_20260601_143000.sfdat` | Same script (`--sfdat`); synthetic QuatImu @ 55 Hz, zero-g matched to `paddle_pause` GPS |
 
 Replace the `.sfdat` with a real recording when hardware is available:
 
