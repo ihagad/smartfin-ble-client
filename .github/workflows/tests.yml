@@ -41,6 +41,37 @@ jobs:
       - name: Run filtfilt property tests
         run: ./build/tests/filtfilt/filtfilt_properties_test --gtest_output=xml:build/test-results/filtfilt_properties.xml
 
+      - name: Run GPS C++ tests
+        run: ./build/tests/gps/gps_test --gtest_output=xml:build/test-results/gps.xml
+
+      - name: Run AHRS orient C++ tests
+        run: ./build/tests/gps/ahrs_orient_test --gtest_output=xml:build/test-results/ahrs_orient.xml
+
+      - name: Run EKF fusion C++ tests
+        run: ./build/tests/gps/ekf_fusion_test --gtest_output=xml:build/test-results/ekf_fusion.xml
+
+      - name: Run GPS geo golden tests (Python)
+        run: python3 -m unittest test_geo_golden -v
+        working-directory: tests/gps
+
+      - name: Run GPS align sessions tests (Python)
+        run: python3 -m unittest test_align_sessions -v
+        working-directory: tests/gps
+
+      - name: Run AHRS orient fixture tests (Python)
+        run: python3 -m unittest test_ahrs_orient -v
+        working-directory: tests/gps
+
+      - name: Run GPS fixture tests (phase A)
+        run: python3 -m unittest discover -s tests/gps -v
+        working-directory: tests/gps
+
+      - name: Smoke-test gps_inspect on fake fixture
+        run: ./build/gps_inspect unprocessed/fake_gps.csv --t0 1780324200
+
+      - name: Smoke-test orient_ride_inspect on fixture .sfdat
+        run: ./build/orient_ride_inspect unprocessed/ride_20260601_143000.sfdat
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

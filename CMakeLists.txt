@@ -74,6 +74,35 @@ target_include_directories(smartfin_filter PUBLIC
 )
 target_compile_features(smartfin_filter PUBLIC cxx_std_20)
 
+add_library(smartfin_gps STATIC
+    src/proccessing/gps/geo_utils.cpp
+    src/proccessing/gps/sensorlog_parser.cpp
+    src/proccessing/gps/session_align.cpp
+)
+target_include_directories(smartfin_gps PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${SMARTFIN_PROCESSING_DIR}
+)
+target_link_libraries(smartfin_gps PUBLIC
+    smartfin_math
+    smartfin_pipeline
+)
+target_compile_features(smartfin_gps PUBLIC cxx_std_20)
+
+add_library(smartfin_fusion STATIC
+    src/proccessing/fusion/ekf_fusion.cpp
+    src/proccessing/fusion/trajectory_export.cpp
+)
+target_include_directories(smartfin_fusion PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${SMARTFIN_PROCESSING_DIR}
+)
+target_link_libraries(smartfin_fusion PUBLIC
+    smartfin_gps
+    smartfin_proc_core
+)
+target_compile_features(smartfin_fusion PUBLIC cxx_std_20)
+
 add_library(smartfin_ahrs STATIC
     src/proccessing/AHRS/madgwick_ahrs.cpp
 )
@@ -120,6 +149,7 @@ add_library(smartfin_proc_core STATIC
     src/proccessing/proc_types.cpp
     src/proccessing/processor.cpp
     src/proccessing/orient_ride.cpp
+    src/proccessing/ride_orient.cpp
 )
 target_include_directories(smartfin_proc_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -168,6 +198,8 @@ set_target_properties(
     smartfin_protocol
     smartfin_math
     smartfin_filter
+    smartfin_gps
+    smartfin_fusion
     smartfin_ahrs
     smartfin_pipeline
     smartfin_welch_demo
@@ -223,6 +255,41 @@ if(SMARTFIN_ENABLE_SIMPLEBLE)
         smartfin_transport
     )
 endif()
+
+#  GPS inspect (SensorLog CSV summary; no BLE dependency)
+add_executable(gps_inspect
+    tools/gps_inspect.cpp
+)
+target_include_directories(gps_inspect PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${SMARTFIN_PROCESSING_DIR}
+)
+target_link_libraries(gps_inspect PRIVATE smartfin_gps)
+
+#  Oriented ride inspect (load_ride → orient_ride summary; no BLE)
+add_executable(orient_ride_inspect
+    tools/orient_ride_inspect.cpp
+)
+target_include_directories(orient_ride_inspect PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${SMARTFIN_PROCESSING_DIR}
+)
+target_link_libraries(orient_ride_inspect PRIVATE smartfin_proc_core)
+
+#  Fusion export (trajectory CSVs from paired .sfdat + SensorLog GPS)
+add_executable(fusion_export
+    tools/fusion_export.cpp
+)
+target_include_directories(fusion_export PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${SMARTFIN_PROCESSING_DIR}
+)
+target_link_libraries(fusion_export PRIVATE
+    smartfin_fusion
+    smartfin_proc_core
+    smartfin_gps
+    smartfin_pipeline
+)
 
 #  Ride recorder (writes binary .sfdat session file) 
 if(SMARTFIN_ENABLE_SIMPLEBLE)
