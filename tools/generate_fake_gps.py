@@ -2,9 +2,13 @@
 """
 Generate SensorLog-style GPS CSV for offline IMU+GPS testing.
 
+GPS path and synthetic IMU accelerations share one trajectory scenario.
+Configure via CLI flags or SMARTFIN_* environment variables (see tools/fixture_config.py).
+
 Usage:
     python3 tools/generate_fake_gps.py
     python3 tools/generate_fake_gps.py --trajectory circle --duration 300
+    SMARTFIN_TRAJECTORY=straight_line python3 tools/generate_fake_gps.py
     python3 tools/generate_fake_gps.py --sfdat unprocessed/ride_20260601_143000.sfdat
 
 Column schema: docs/SENSORLOG_CSV.md
@@ -15,13 +19,23 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import random
 import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+_TOOLS_DIR = Path(__file__).resolve().parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+
+from fixture_config import (
+    FAKE_SESSION_T0_UNIX,
+    FixtureConfig,
+    _env_bool,
+)
+
 # Fixed session start for reproducible test fixtures (2026-06-01 14:30:00 UTC).
-FAKE_SESSION_T0_UNIX = 1780324200
 
 # Scripps Pier, La Jolla — nominal surf test origin.
 ORIGIN_LAT = 32.867512
@@ -250,25 +264,62 @@ def write_gps_csv(path: Path, fixes: list[GpsFix]) -> None:
 G0_MPS2 = 9.80665
 
 
-def zero_g_enu_mps2(t_s: float, trajectory: str) -> tuple[float, float, float]:
+def yaw_quat_wxyz(yaw_rad: float) -> tuple[float, float, float, float]:
+    """Rotation about +Up (ENU yaw). Matches math3d body-from-earth convention."""
+    half = 0.5 * yaw_rad
+    return (math.cos(half), 0.0, 0.0, math.sin(half))
+
+
+def synthetic_body_accel_mps2(
+    t_s: float,
+    cfg: FixtureConfig,
+    rng: random.Random,
+) -> tuple[float, float, float, float, float, float, float]:
+    """
+    Build one QuatImu sample with optional orientation/accel error.
+
+    Returns (ax, ay, az, qw, qx, qy, qz) in the on-disk layout.
+
+    Error models (combinable):
+      - yaw drift: reported quaternion yaws vs true level frame → mis-projected accel
+      - body accel bias: constant offset integrated into velocity/position drift
+      - accel noise: zero-g white noise in body frame
+    """
+    ax_0g, ay_0g, az_0g = zero_g_enu_mps2(t_s, cfg)
+
+    if cfg.imu_accel_noise_std_g > 0.0:
+        ax_0g += rng.gauss(0.0, cfg.imu_accel_noise_std_g) * G0_MPS2
+        ay_0g += rng.gauss(0.0, cfg.imu_accel_noise_std_g) * G0_MPS2
+        az_0g += rng.gauss(0.0, cfg.imu_accel_noise_std_g) * G0_MPS2
+
+    ax_0g += cfg.imu_accel_bias_x_mps2
+    ay_0g += cfg.imu_accel_bias_y_mps2
+    az_0g += cfg.imu_accel_bias_z_mps2
+
+    # Physical sensor in a level board frame (= ENU when truth is identity).
+    ax = ax_0g
+    ay = ay_0g
+    az = az_0g + G0_MPS2
+
+    yaw_rad = math.radians(cfg.imu_yaw_drift_dps) * t_s
+    qw, qx, qy, qz = yaw_quat_wxyz(yaw_rad)
+    return ax, ay, az, qw, qx, qy, qz
+
+
+def zero_g_enu_mps2(t_s: float, cfg: FixtureConfig) -> tuple[float, float, float]:
     """
     Kinematic zero-g acceleration in ENU (m/s²) consistent with GPS trajectories.
 
     Uses identity orientation in the synthetic .sfdat so body frame = ENU.
     Constant-speed legs → ~0; circle includes centripetal acceleration.
     """
-    if trajectory == "paddle_pause":
+    if cfg.trajectory in ("paddle_pause", "straight_line", "stationary"):
         return (0.0, 0.0, 0.0)
-    if trajectory == "straight_line":
-        return (0.0, 0.0, 0.0)
-    if trajectory == "stationary":
-        return (0.0, 0.0, 0.0)
-    if trajectory == "circle":
-        radius_m = 40.0
-        speed_mps = 1.2
+    if cfg.trajectory == "circle":
+        radius_m = cfg.circle_radius_m
+        speed_mps = cfg.circle_speed_mps
         omega = speed_mps / radius_m
         angle = omega * t_s
-        # Matches trajectory_circle position derivatives (east, north).
         ax = -radius_m * omega * omega * math.sin(angle)
         ay = radius_m * omega * omega * math.cos(angle)
         return (ax, ay, 0.0)
@@ -277,12 +328,10 @@ def zero_g_enu_mps2(t_s: float, trajectory: str) -> tuple[float, float, float]:
 
 def write_synthetic_sfdat(
     path: Path,
-    duration_s: float,
-    trajectory: str = "paddle_pause",
-    imu_hz: float = 55.0,
+    cfg: FixtureConfig,
 ) -> int:
     """
-    Write a .sfdat with synthetic QuatImu @ imu_hz, kinematically matched to @p trajectory.
+    Write a .sfdat with synthetic QuatImu @ cfg.imu_hz, matched to cfg.trajectory.
 
     Identity quaternion (level, ENU = body): accel_ms2 = zero_g_enu + gravity on Up.
     Returns number of records written.
@@ -305,19 +354,16 @@ def write_synthetic_sfdat(
         fwver_size,
     )
 
-    n_samples = int(duration_s * imu_hz) + 1
-    dt_ms = 1000.0 / imu_hz
+    n_samples = int(cfg.duration_s * cfg.imu_hz) + 1
+    dt_ms = 1000.0 / cfg.imu_hz
+    rng = random.Random(cfg.t0_unix)
 
     with path.open("wb") as f:
         f.write(header)
         for i in range(n_samples):
             elapsed_ms = int(round(i * dt_ms))
             t_s = elapsed_ms / 1000.0
-            ax_0g, ay_0g, az_0g = zero_g_enu_mps2(t_s, trajectory)
-            # Body frame = ENU with identity quat; gravity along +Z (g-units z=1).
-            ax = ax_0g
-            ay = ay_0g
-            az = az_0g + G0_MPS2
+            ax, ay, az, qw, qx, qy, qz = synthetic_body_accel_mps2(t_s, cfg, rng)
             payload = struct.pack(
                 quat_fmt,
                 elapsed_ms,
@@ -330,10 +376,10 @@ def write_synthetic_sfdat(
                 25.0,
                 0.0,
                 0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
+                qw,
+                qx,
+                qy,
+                qz,
                 5.0,
                 1,
             )
@@ -347,6 +393,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parent.parent
     default_csv = repo_root / "unprocessed" / "fake_gps.csv"
     default_sfdat = repo_root / "unprocessed" / "ride_20260601_143000.sfdat"
+    defaults = FixtureConfig.from_env()
 
     parser = argparse.ArgumentParser(
         description="Generate SensorLog-style fake GPS CSV (and optional .sfdat)."
@@ -354,20 +401,86 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--trajectory",
         choices=sorted(TRAJECTORIES),
-        default="paddle_pause",
-        help="Path shape (default: paddle_pause)",
+        default=defaults.trajectory,
+        help="Path shape for GPS + synthetic IMU (default: %(default)s)",
     )
     parser.add_argument(
         "--duration",
         type=float,
-        default=180.0,
-        help="Session length in seconds (default: 180 = 3 min)",
+        default=defaults.duration_s,
+        help="Session length in seconds (default: %(default)s)",
     )
     parser.add_argument(
         "--rate",
         type=float,
-        default=1.0,
-        help="GPS sample rate in Hz (default: 1.0)",
+        default=defaults.gps_rate_hz,
+        help="GPS sample rate in Hz (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=defaults.speed_mps,
+        help="Ground speed for straight_line / paddle_pause (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--circle-radius",
+        type=float,
+        default=defaults.circle_radius_m,
+        help="Circle radius in meters (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--circle-speed",
+        type=float,
+        default=defaults.circle_speed_mps,
+        help="Circle ground speed in m/s (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--paddle-s",
+        type=float,
+        default=defaults.paddle_s,
+        help="Paddle segment length in seconds (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--pause-s",
+        type=float,
+        default=defaults.pause_s,
+        help="Pause segment length in seconds (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--imu-yaw-drift-dps",
+        type=float,
+        default=defaults.imu_yaw_drift_dps,
+        help="Reported quaternion yaw drift (deg/s); simulates gyro bias (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--imu-accel-bias-x",
+        type=float,
+        default=defaults.imu_accel_bias_x_mps2,
+        help="Body-frame accel bias X in m/s² (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--imu-accel-bias-y",
+        type=float,
+        default=defaults.imu_accel_bias_y_mps2,
+        help="Body-frame accel bias Y in m/s² (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--imu-accel-bias-z",
+        type=float,
+        default=defaults.imu_accel_bias_z_mps2,
+        help="Body-frame accel bias Z in m/s² (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--imu-accel-noise-g",
+        type=float,
+        default=defaults.imu_accel_noise_std_g,
+        help="Zero-g accel white noise σ in g (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--imu-error-demo",
+        action="store_true",
+        default=_env_bool("SMARTFIN_IMU_ERROR_DEMO", False),
+        help="Preset IMU error (1°/s yaw drift + 0.015 m/s² X bias) for fusion demos",
     )
     parser.add_argument(
         "--output",
@@ -389,37 +502,85 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--t0",
         type=int,
-        default=FAKE_SESSION_T0_UNIX,
-        help=f"Unix session start in seconds (default: {FAKE_SESSION_T0_UNIX})",
+        default=defaults.t0_unix,
+        help=f"Unix session start in seconds (default: {defaults.t0_unix})",
     )
     return parser.parse_args(argv)
 
 
+def args_to_config(args: argparse.Namespace) -> FixtureConfig:
+    if args.imu_error_demo:
+        return FixtureConfig(
+            trajectory=args.trajectory,
+            duration_s=args.duration,
+            gps_rate_hz=args.rate,
+            t0_unix=args.t0,
+            speed_mps=args.speed,
+            circle_radius_m=args.circle_radius,
+            circle_speed_mps=args.circle_speed,
+            paddle_s=args.paddle_s,
+            pause_s=args.pause_s,
+            imu_yaw_drift_dps=1.0,
+            imu_accel_bias_x_mps2=0.015,
+        )
+
+    return FixtureConfig(
+        trajectory=args.trajectory,
+        duration_s=args.duration,
+        gps_rate_hz=args.rate,
+        t0_unix=args.t0,
+        speed_mps=args.speed,
+        circle_radius_m=args.circle_radius,
+        circle_speed_mps=args.circle_speed,
+        paddle_s=args.paddle_s,
+        pause_s=args.pause_s,
+        imu_yaw_drift_dps=args.imu_yaw_drift_dps,
+        imu_accel_bias_x_mps2=args.imu_accel_bias_x,
+        imu_accel_bias_y_mps2=args.imu_accel_bias_y,
+        imu_accel_bias_z_mps2=args.imu_accel_bias_z,
+        imu_accel_noise_std_g=args.imu_accel_noise_g,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+    cfg = args_to_config(args)
 
     global FAKE_SESSION_T0_UNIX
-    FAKE_SESSION_T0_UNIX = args.t0
+    FAKE_SESSION_T0_UNIX = cfg.t0_unix
 
-    if args.duration <= 0 or args.rate <= 0:
+    if cfg.duration_s <= 0 or cfg.gps_rate_hz <= 0:
         print("duration and rate must be positive", file=sys.stderr)
         return 1
 
-    dt_s = 1.0 / args.rate
-    gen = TRAJECTORIES[args.trajectory]
-    fixes = gen(args.duration, dt_s)
+    dt_s = 1.0 / cfg.gps_rate_hz
+    gen = TRAJECTORIES[cfg.trajectory]
+    fixes = gen(cfg.duration_s, dt_s, **cfg.trajectory_kwargs())
 
     write_gps_csv(args.output, fixes)
     print(f"Wrote {len(fixes)} GPS fixes -> {args.output}")
-    print(f"  T0 = {FAKE_SESSION_T0_UNIX} (2026-06-01T14:30:00Z when using default)")
-    print(f"  trajectory = {args.trajectory}, duration = {args.duration}s, rate = {args.rate} Hz")
+    print(f"  T0 = {cfg.t0_unix} (2026-06-01T14:30:00Z when using default)")
+    print(
+        f"  trajectory = {cfg.trajectory}, duration = {cfg.duration_s}s, "
+        f"rate = {cfg.gps_rate_hz} Hz"
+    )
 
     if not args.no_sfdat:
-        n = write_synthetic_sfdat(args.sfdat, args.duration, args.trajectory)
+        n = write_synthetic_sfdat(args.sfdat, cfg)
+        err_note = ""
+        if cfg.imu_error_enabled():
+            err_note = (
+                f"  IMU error: yaw_drift={cfg.imu_yaw_drift_dps} deg/s, "
+                f"bias=({cfg.imu_accel_bias_x_mps2}, {cfg.imu_accel_bias_y_mps2}, "
+                f"{cfg.imu_accel_bias_z_mps2}) m/s², "
+                f"noise σ={cfg.imu_accel_noise_std_g} g\n"
+            )
         print(
-            f"Wrote {n} QuatImu records @ 55 Hz -> {args.sfdat} "
-            f"(kinematics matched to {args.trajectory})"
+            f"Wrote {n} QuatImu records @ {cfg.imu_hz:g} Hz -> {args.sfdat} "
+            f"(kinematics matched to {cfg.trajectory})"
         )
+        if err_note:
+            print(err_note, end="")
 
     return 0
 

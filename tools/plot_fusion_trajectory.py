@@ -78,10 +78,27 @@ def plot_path_enu(
     expect_speed: float | None = None,
 ) -> None:
     """Bird's-eye path: East vs North (meters from session origin)."""
+    east = data["east_m"]
+    north = data["north_m"]
+
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.plot(data["east_m"], data["north_m"], lw=1.2, color="steelblue")
-    ax.plot(data["east_m"][0], data["north_m"][0], "o", color="green", label="start")
-    ax.plot(data["east_m"][-1], data["north_m"][-1], "s", color="crimson", label="end")
+    ax.plot(east, north, lw=1.2, color="steelblue")
+    ax.plot(east[0], north[0], "o", color="green", label="start")
+    ax.plot(east[-1], north[-1], "s", color="crimson", label="end")
+
+    # Pure north/south or east/west tracks have zero span on one axis; equal
+    # aspect then collapses that axis and the path becomes invisible.
+    e_span = float(np.ptp(east))
+    n_span = float(np.ptp(north))
+    if e_span < 1e-3:
+        pad = max(n_span * 0.5, 5.0)
+        cx = float(np.mean(east))
+        ax.set_xlim(cx - pad, cx + pad)
+    if n_span < 1e-3:
+        pad = max(e_span * 0.5, 5.0)
+        cy = float(np.mean(north))
+        ax.set_ylim(cy - pad, cy + pad)
+
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel("East (m)")
     ax.set_ylabel("North (m)")

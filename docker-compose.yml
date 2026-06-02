@@ -13,6 +13,18 @@ services:
       - ./docker-out:/workspace/docker-out
     environment:
       SMARTFIN_OUT_DIR: /workspace/docker-out
+      # Synthetic path shape (GPS + IMU). Set REGENERATE_FIXTURES=1 to apply.
+      # SMARTFIN_TRAJECTORY: straight_line | circle | paddle_pause | stationary
+      # SMARTFIN_FIXTURE_DURATION: "180"
+      # SMARTFIN_FIXTURE_SPEED: "1.5"
+      # SMARTFIN_CIRCLE_RADIUS: "40"
+      # SMARTFIN_CIRCLE_SPEED: "1.2"
+      # SMARTFIN_PADDLE_S: "30"
+      # SMARTFIN_PAUSE_S: "15"
+      # SMARTFIN_REGENERATE_FIXTURES: "0"
+      # SMARTFIN_IMU_ERROR_DEMO: "1"   # yaw drift + accel bias for fusion demos
+      # SMARTFIN_IMU_YAW_DRIFT_DPS: "1.0"
+      # SMARTFIN_IMU_ACCEL_BIAS_X: "0.015"
 
   # Optional: run C++ GPS tests only
   test-gps:

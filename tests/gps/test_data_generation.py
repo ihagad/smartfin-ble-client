@@ -41,6 +41,16 @@ def load_generator_module():
     return mod
 
 
+def load_fixture_config_module():
+    path = TOOLS_DIR / "fixture_config.py"
+    spec = importlib.util.spec_from_file_location("fixture_config", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 gen = load_generator_module()
 
 MIN_DURATION_S = 60.0
@@ -133,6 +143,42 @@ class TestCommittedFixtures(unittest.TestCase):
 
 
 class TestGenerateFakeGpsTool(unittest.TestCase):
+    def test_fixture_config_reads_trajectory_from_env(self) -> None:
+        fc = load_fixture_config_module()
+        with _temporary_env(SMARTFIN_TRAJECTORY="circle", SMARTFIN_FIXTURE_SPEED="2.0"):
+            cfg = fc.FixtureConfig.from_env()
+            self.assertEqual(cfg.trajectory, "circle")
+            self.assertAlmostEqual(cfg.speed_mps, 2.0)
+
+    def test_imu_error_demo_enables_drift_knobs(self) -> None:
+        fc = load_fixture_config_module()
+        with _temporary_env(SMARTFIN_IMU_ERROR_DEMO="1"):
+            cfg = fc.FixtureConfig.from_env()
+            self.assertTrue(cfg.imu_error_enabled())
+            self.assertAlmostEqual(cfg.imu_yaw_drift_dps, 1.0)
+            self.assertAlmostEqual(cfg.imu_accel_bias_x_mps2, 0.015)
+
+    def test_imu_yaw_drift_changes_stored_quaternion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "drift.sfdat"
+            _run_generator(
+                "--trajectory",
+                "circle",
+                "--duration",
+                "10",
+                "--output",
+                str(Path(tmp) / "gps.csv"),
+                "--sfdat",
+                str(out),
+                "--imu-yaw-drift-dps",
+                "2.0",
+            )
+            elapsed, quats = _read_first_last_quat(out)
+            self.assertEqual(elapsed[0], 0)
+            self.assertGreater(elapsed[-1], 0)
+            self.assertAlmostEqual(quats[0][0], 1.0, places=4)
+            self.assertLess(abs(quats[-1][0]), 0.999)
+
     def test_cli_generates_csv_and_sfdat(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -227,6 +273,44 @@ def _median_gps_dt_s(rows: list[dict[str, str]]) -> float:
     return dts[len(dts) // 2]
 
 
+def _read_first_last_quat(path: Path) -> tuple[list[int], list[tuple[float, float, float, float]]]:
+    import struct
+
+    data = path.read_bytes()
+    offset = struct.calcsize("<QH4B")
+    quat_fmt = "<I3f3f3f4ffB"
+    quat_size = struct.calcsize(quat_fmt)
+    elapsed: list[int] = []
+    quats: list[tuple[float, float, float, float]] = []
+    while offset + 1 + quat_size <= len(data):
+        tag = data[offset]
+        offset += 1
+        if tag != gen.RECORD_TAG_QUAT_IMU:
+            break
+        (
+            elapsed_ms,
+            _ax,
+            _ay,
+            _az,
+            _gx,
+            _gy,
+            _gz,
+            _mx,
+            _my,
+            _mz,
+            qw,
+            qx,
+            qy,
+            qz,
+            _acc,
+            _valid,
+        ) = struct.unpack(quat_fmt, data[offset : offset + quat_size])
+        offset += quat_size
+        elapsed.append(elapsed_ms)
+        quats.append((qw, qx, qy, qz))
+    return elapsed, quats
+
+
 def _run_generator(*args: str) -> subprocess.CompletedProcess[str]:
     script = TOOLS_DIR / "generate_fake_gps.py"
     proc = subprocess.run(
@@ -237,6 +321,28 @@ def _run_generator(*args: str) -> subprocess.CompletedProcess[str]:
         text=True,
     )
     return proc
+
+
+class _temporary_env:
+    def __init__(self, **values: str) -> None:
+        self._values = values
+        self._previous: dict[str, str | None] = {}
+
+    def __enter__(self) -> None:
+        import os
+
+        for key, value in self._values.items():
+            self._previous[key] = os.environ.get(key)
+            os.environ[key] = value
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        import os
+
+        for key, previous in self._previous.items():
+            if previous is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous
 
 
 if __name__ == "__main__":

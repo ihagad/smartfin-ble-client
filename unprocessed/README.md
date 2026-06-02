@@ -37,9 +37,27 @@ Keep **T0** documented here when regenerating fixtures so GPS and IMU stay align
 
 ## Regenerate
 
+Trajectory and tuning knobs (GPS path + matched synthetic IMU):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `SMARTFIN_TRAJECTORY` | `paddle_pause` | `straight_line`, `circle`, `paddle_pause`, `stationary` |
+| `SMARTFIN_FIXTURE_DURATION` | `180` | Session length (s) |
+| `SMARTFIN_FIXTURE_GPS_RATE` | `1.0` | GPS Hz |
+| `SMARTFIN_FIXTURE_SPEED` | `1.5` | m/s for straight_line / paddle_pause |
+| `SMARTFIN_CIRCLE_RADIUS` | `40` | Circle radius (m) |
+| `SMARTFIN_CIRCLE_SPEED` | `1.2` | Circle speed (m/s) |
+| `SMARTFIN_PADDLE_S` | `30` | Paddle segment (s) |
+| `SMARTFIN_PAUSE_S` | `15` | Pause segment (s) |
+| `SMARTFIN_IMU_YAW_DRIFT_DPS` | `0` | Yaw drift in reported quaternion (deg/s) |
+| `SMARTFIN_IMU_ACCEL_BIAS_X/Y/Z` | `0` | Body-frame accel bias (m/s²) |
+| `SMARTFIN_IMU_ACCEL_NOISE_G` | `0` | Zero-g noise σ (g) |
+| `SMARTFIN_IMU_ERROR_DEMO` | `0` | Set `1` for preset drift demo |
+
 ```bash
 python3 tools/generate_fake_gps.py --trajectory paddle_pause --duration 180
-python3 tools/generate_fake_gps.py --trajectory circle --duration 300 --output unprocessed/fake_gps_circle.csv
+SMARTFIN_TRAJECTORY=circle python3 tools/generate_fake_gps.py
+python3 tools/generate_fake_gps.py --trajectory circle --imu-error-demo
 ```
 
 Schema details: [docs/SENSORLOG_CSV.md](../docs/SENSORLOG_CSV.md)
