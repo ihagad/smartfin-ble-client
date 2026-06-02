@@ -1,0 +1,35 @@
+# GPS+IMU offline pipeline in Docker.
+#
+#   docker compose build
+#   docker compose run --rm pipeline
+#
+# Outputs appear in ./docker-out/ on the host.
+
+services:
+  pipeline:
+    build: .
+    image: smartfin-ble-client:latest
+    volumes:
+      - ./docker-out:/workspace/docker-out
+    environment:
+      SMARTFIN_OUT_DIR: /workspace/docker-out
+
+  # Optional: run C++ GPS tests only
+  test-gps:
+    build: .
+    image: smartfin-ble-client:latest
+    command:
+      - bash
+      - -lc
+      - |
+        cd /workspace/build && ctest -R 'gps_' --output-on-failure
+        cd /workspace/tests/gps && python3 -m unittest discover -v
+
+  shell:
+    build: .
+    image: smartfin-ble-client:latest
+    stdin_open: true
+    tty: true
+    entrypoint: ["/bin/bash"]
+    volumes:
+      - .:/workspace

@@ -6,6 +6,7 @@
 #include "gps/session_align.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 

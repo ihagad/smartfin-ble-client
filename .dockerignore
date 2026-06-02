@@ -1,0 +1,17 @@
+# Build artifacts and local outputs
+build/
+cmake-build-*/
+docker-out/
+**/test-results/
+
+# Git (not needed for offline pipeline image)
+.git/
+.github/
+
+# IDE / OS
+.vscode/
+.cursor/
+.DS_Store
+
+# Optional heavy externals (SimpleBLE disabled in Docker build)
+external/SimpleBLE/
