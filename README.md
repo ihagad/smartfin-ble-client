@@ -1,77 +1,72 @@
 # smartfin-ble-client
 
-Cross-platform C++ backend for Smartfin telemetry processing. The BLE layer lives on each platform (Swift/CoreBluetooth on Apple, SimpleBLE on desktop); this library handles everything from raw packet bytes to processed, world-frame sensor data.
+Cross-platform **C++ backend** for [Smartfin](https://github.com/UCSD-E4E) ocean telemetry. Decodes BLE sensor packets, runs orientation and wave-band signal processing, and exposes results through a pure-C API for Apple Watch and desktop clients.
 
-## Overview
+Part of UCSD Engineers for Exploration (E4E) — Smartfin embeds IMU sensors in a surfboard fin to capture ride dynamics and ocean conditions.
 
-This repository is the shared backend for all Smartfin clients. It decodes BLE telemetry packets, runs the signal processing pipeline (AHRS orientation, Butterworth filtering, zero-phase filtfilt), and exposes results through a pure-C API that any platform can consume.
+## Goals
 
-The primary target is Apple Watch. Swift owns the CoreBluetooth BLE layer and hands raw notification bytes into the C bridge. The C++ pipeline runs entirely on-device without any platform-specific code.
+- One shared processing core so firmware, the Watch app, and lab tools don’t drift on protocol or signal math
+- Run the full pipeline on-device (Apple Watch) without platform-specific C++
+- Keep BLE transport on the platform (Swift CoreBluetooth / desktop SimpleBLE); this library owns bytes → metrics
 
-This separation prevents protocol drift between:
+## What This Repo Owns
 
-- firmware in [`smartfin-fw3`](https://github.com/UCSD-E4E/smartfin-fw3)
-- desktop and lab tooling
-- the Apple Watch app ([`smartfin-watch`](https://github.com/charliekush/smartfin-watch))
-
-## What This Repository Owns
-
-- BLE telemetry packet framing, ensemble decoding, and dequantization
-- ensemble IDs, protocol constants, field scaling, and unit conversion
-- AHRS orientation with Madgwick filter (offline) or on-device DMP quaternion (not yet decided)
-- world-frame rotation and gravity subtraction
-- Butterworth bandpass [0.05–0.5 Hz] filter coefficient generation
-- `filtfilt` zero-phase forward-backward filtering with Gustafsson IC (matches SciPy)
-- wave metric pipeline: decimation and wave-band filtering implemented; Welch PSD, spectral integration, moments, Hs/Tp/Tm01/Tm02 *(planned)*
-- pure-C bridge API for Swift interop (`src/bridge/`)
-- optional host-side SimpleBLE transport adapter for desktop testing
-- GoogleTest unit test suite with SciPy-generated reference vectors
-- GitHub Actions CI
+- BLE telemetry framing, ensemble decoding, and dequantization
+- Protocol constants, field scaling, and unit conversion
+- AHRS orientation (Madgwick) with world-frame rotation and gravity subtraction
+- Butterworth bandpass filtering and SciPy-matching `filtfilt` (Gustafsson initial conditions)
+- Wave-metric pipeline building blocks (decimation, wave-band filtering, Welch PSD)
+- Pure-C bridge for Swift interop (`src/bridge/`)
+- Optional SimpleBLE host transport for desktop testing
+- GoogleTest suite with SciPy-generated golden vectors + GitHub Actions CI
 
 ## What It Does Not Own
 
-- firmware measurement logic or embedded BLE stack behavior
-- Apple Watch app UI, lifecycle, or BLE connection management
-- platform-specific presentation models
+- Firmware / embedded BLE stack ([`smartfin-fw3`](https://github.com/UCSD-E4E/smartfin-fw3))
+- Apple Watch UI and connection lifecycle ([`smartfin-watch`](https://github.com/charliekush/smartfin-watch))
+- Platform presentation models
 
-## Documentation
+## Tech Stack
 
-- [Architecture](ARCHITECTURE.md)  -  module boundaries, processing stages, transport ownership, and design rationale.
-- [Swift / Xcode Integration](docs/SWIFT_INTEGRATION.md)  -  C bridge usage, Xcode linking notes, and a minimal Swift example.
+| Area | Tools |
+|---|---|
+| Language | C++20 |
+| Build | CMake |
+| Tests | GoogleTest, SciPy/NumPy reference vectors |
+| Interop | Pure-C bridge for Swift / watchOS |
+| Optional | SimpleBLE (desktop transport) |
+| CI | GitHub Actions |
 
-## Building
+## Architecture
+
+```
+raw BLE bytes
+  → protocol decode / dequantize
+  → AHRS + world-frame processing
+  → filter / decimate / spectral analysis
+  → sinks (buffer, CSV, log) + C bridge API
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) and [Swift / Xcode Integration](docs/SWIFT_INTEGRATION.md).
+
+## Build & Test
 
 ```bash
 cmake -B build
 cmake --build build
-```
-
-Run tests:
-
-```bash
 cd build && ctest
 ```
 
-## Testing
-
-GoogleTest suite covering:
-
-- Butterworth filter coefficient correctness and filter properties
-- `filtfilt` Gustafsson initial-condition method
-- `filtfilt` zero-phase properties verified against SciPy reference vectors (`tests/filtfilt/gen_filtfilt_vectors.py`)
-
-CI runs on every push via GitHub Actions.
-
-## Related Repositories
-
-- [`smartfin-fw3`](https://github.com/UCSD-E4E/smartfin-fw3)  -  firmware, embedded BLE stack, telemetry byte generation
-
-
 ## Design Principles
 
-- share processing logic, not platform assumptions
-- BLE transport stays on the platform (Swift or SimpleBLE)  -  never in this library
-- C bridge boundary stays narrow and stable for Swift interop
-- prefer explicit binary layouts over implicit assumptions
-- lock protocol compatibility with golden test vectors
-- make optional dependencies (SimpleBLE) truly optional
+- Share processing logic, not platform assumptions
+- Keep the C bridge narrow and stable for Swift
+- Prefer explicit binary layouts; lock compatibility with golden tests
+- Make optional deps (SimpleBLE) truly optional
+
+## Applications
+
+- On-device surf session telemetry for Apple Watch
+- Lab / desktop tools for validating firmware packets
+- Shared library for any Smartfin client that needs consistent IMU → wave metrics
